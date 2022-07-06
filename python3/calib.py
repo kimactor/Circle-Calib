@@ -11,8 +11,8 @@ from utils import *
 EXTENSIONS_PCD = ['.pcd']
 VERSION = "2.0.0"
 PROJECT = "Test"
-EXCUTABLE_BIN = "exec /home/xavier/old/calib/bin/my_test "
-PCDS_ADDR = "/home/xavier/old/calib/data/good"
+EXCUTABLE_BIN = "exec bin/calibration "
+PCDS_ADDR = "data/pcds"
 
 
 def is_pcd(filename):
@@ -21,27 +21,31 @@ def is_pcd(filename):
 
 class CalibApp:
     def __init__(self, folder):
-        self.gps = dict()
+        self.lla = dict()
         self.selected = dict()
         self.feature = dict()
         # I just dont want to check if the last charactor is '/' in C++
         self.address = os.path.join(folder, '')
         self.select_yaml_file = os.path.join(self.address, "selected.yaml")
         self.feature_yaml_file = os.path.join(self.address, "feature.yaml")
-        self.gps_yaml_file = os.path.join(self.address, "gps.yaml")
+        self.lla_yaml_file = os.path.join(self.address, "gps.yaml")
         self.result_yaml_file = os.path.join(self.address, "result.yaml")
-        self.analyse_yaml_file = os.path.join(self.address, "analyse.yaml")
+        self.analyse_txt_file = os.path.join(self.address, "analyse.txt")
 
     def compute(self):
-        if not os.path.exists(self.select_yaml_file):
-            self.select()
-        if not os.path.exists(self.feature_yaml_file):
-            self.extract()
-        if (os.path.exists(self.feature_yaml_file) & os.path.exists(self.gps_yaml_file)):
+        if (os.path.exists(self.feature_yaml_file) & os.path.exists(self.lla_yaml_file)):
             self.load()
             self.solve()
         else:
-            print("Lack of feature yaml or gps yaml")
+            if not os.path.exists(self.select_yaml_file):
+                self.select()
+            if not os.path.exists(self.feature_yaml_file):
+                self.extract()
+            if (os.path.exists(self.feature_yaml_file) & os.path.exists(self.lla_yaml_file)):
+                self.load()
+                self.solve()
+            else:
+                print("Lack of feature yaml or gps yaml")
 
     def select(self):
         print("1) Please pick one mark point using [shift + left click]")
@@ -100,38 +104,35 @@ class CalibApp:
         if yaml.__version__ >= '5.1':
             dict_feature = yaml.load(
                 open(self.feature_yaml_file), Loader=yaml.FullLoader)
-            dict_gps = yaml.load(open(self.gps_yaml_file),
+            dict_gps = yaml.load(open(self.lla_yaml_file),
                                  Loader=yaml.FullLoader)
         else:
             dict_feature = yaml.load(
                 open(self.feature_yaml_file))
-            dict_gps = yaml.load(open(self.gps_yaml_file))
+            dict_gps = yaml.load(open(self.lla_yaml_file))
         for key, value in dict_feature.items():
             self.feature.update({key: [value['x'], value['y'], value['z']]})
         for key, value in dict_gps.items():
-            self.gps.update(
+            self.lla.update(
                 {key: [value['longtitude'], value['latitude'], value['altitude']]})
         debug("Feature", self.feature)
-        debug("GPS", self.gps)
+        debug("GPS", self.lla)
 
     def solve(self):
         # load feature and gps yaml
-        coor_gps = []
+        coor_lla = []
         coor_cen = []
         for key in self.feature:
-            if key in self.gps:
+            if key in self.lla:
                 coor_cen.append(self.feature[key])
-                coor_gps.append(self.gps.pop(key))
+                coor_lla.append(self.lla.pop(key))
         coor_cen = np.array(coor_cen, dtype=np.float64)
-        coor_gps = np.array(coor_gps, dtype=np.float64)
-        if (coor_cen.shape[0] >=4):
-            assert coor_cen.shape == coor_gps.shape, "[SOLVE] Shape dont match: feature and gps"
-            coor_wgs = gps_to_wgs(coor_gps)
-            # latitude,longtitude,altitude -> altitude,latitude,longtitude
-            # 纬度,经度,高度(y,z,x)
-            coor_wgs = coor_wgs[:, [2, 0, 1]]
-            assert coor_cen.shape == coor_wgs.shape, "[SOLVE] Shape dont match: feature and wgs"
-            best_candidate = best_RT(coor_wgs, coor_cen)
+        coor_lla = np.array(coor_lla, dtype=np.float64)
+        if (coor_cen.shape[0] >= 4):
+            assert coor_cen.shape == coor_lla.shape, "[SOLVE] Shape dont match: feature and lla"
+            coor_ecef = lla_to_ecef(coor_lla)
+            assert coor_cen.shape == coor_ecef.shape, "[SOLVE] Shape dont match: feature and ecef"
+            best_candidate = best_RT(coor_ecef, coor_cen)
             best_candidate.print()
             self.save(best_candidate)
         else:
@@ -149,16 +150,14 @@ class CalibApp:
         })
         with open(self.result_yaml_file, 'w') as file:
             file.write(yaml.dump(output, sort_keys=False))
-        with open(self.analyse_yaml_file, 'w', encoding='utf-8') as file:
-            file.write(yaml.dump(result, sort_keys=False))
+        with open(self.analyse_txt_file, 'w') as file:
+            file.write(result.output())
 
 
 if __name__ == "__main__":
-    # base_addr = os.listdir(PCDS_ADDR)
-    # for folder in base_addr:
-    #     temp_full_addr = os.path.join(PCDS_ADDR, folder)
-    #     if os.path.isdir(temp_full_addr):
-    #         opera = CalibApp(temp_full_addr)
-    #         opera.compute()
-    opera = CalibApp("/home/xavier/old/calib/data/good/t3")
-    opera.compute()
+    base_addr = os.listdir(PCDS_ADDR)
+    for folder in base_addr:
+        temp_full_addr = os.path.join(PCDS_ADDR, folder)
+        if os.path.isdir(temp_full_addr):
+            opera = CalibApp(temp_full_addr)
+            opera.compute()

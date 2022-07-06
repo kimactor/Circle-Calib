@@ -210,19 +210,19 @@ def solve_svg(f_1, f_2):
     T = np.mean(f_1 - np.dot(f_2, np.transpose(R)), axis=0)
     return R, T
 
-
-def gps_to_wgs(gps):
-    wgs = []
+# LLA(lon,lat,alt) to ECEF (Earth-Centred Earth Fixed)
+def lla_to_ecef(lla):
+    ecef = []
     # f = 1 / 298.257223563                  # WGS84椭球扁率
     r = 6378137                              # 长半轴
     # b = r * (1 - f)                        # 椭球扁率
     e = 8.1819190842622e-2                   # 椭球第一偏心率
     esq = math.pow(e, 2)
-    # latitude,longtitude,altitude
-    # 纬度,经度,高度
-    for item in gps:
-        lat = math.radians(item[0])
-        lon = math.radians(item[1])
+    # LLA : longtitude, latitude, altitude
+    # ECEF: X(), Y(), Z(North Pole)
+    for item in lla:
+        lon = math.radians(item[0])
+        lat = math.radians(item[1])
         alt = item[2]
 
         sin_lat = math.sin(lat)
@@ -231,12 +231,12 @@ def gps_to_wgs(gps):
         cos_lon = math.cos(lon)
         N = r / math.sqrt(1 - esq * math.pow(sin_lat, 2))
 
-        wgs.append([(N+alt)*cos_lat*cos_lon,
+        ecef.append([(N+alt)*cos_lat*cos_lon,
                     (N+alt)*cos_lat*sin_lon,
                     (N*(1-esq) + alt)*sin_lat])
-    wgs = np.array(wgs, dtype=np.float64)
-    assert wgs.shape == gps.shape, "[GPS2WGS] Shape dont match: wgs and gps"
-    return wgs
+    ecef = np.array(ecef, dtype=np.float64)
+    assert ecef.shape == lla.shape, "[LLA2ECEF] Shape dont match: ECEF and LLA"
+    return ecef
 
 
 def str_matrix(m):
@@ -293,6 +293,18 @@ class candidate:
         debug("Average error ", self.e_avg)
         debug("Inline points ", self.e_valid)
         debug("Std error ", self.e_std)
+
+    def output(self):
+        res = "Best solution\n" \
+        + "Rotation :\n"      + str(self.r)      + "\n" \
+        + "Translation: \n"   + str(self.t)      + "\n" \
+        + "Axis error: \n"    + str(self.e_coor) + "\n" \
+        + "Distance error: \n"+ str(self.e_dis)  + "\n" \
+        + "Average error: \n" + str(self.e_avg)  + "\n" \
+        + "Inline points: \n" + str(self.e_valid)+ "\n" \
+        + "Std error: \n"     + str(self.e_std)
+        return res
+
 
 # (TODO: need to eliminate outliner points)
 def best_RT(topose, frompose):
